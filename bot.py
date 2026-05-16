@@ -1,4 +1,5 @@
 import os
+import asyncio
 import threading
 from flask import Flask
 import google.generativeai as genai
@@ -19,7 +20,9 @@ def run():
     server.run(host='0.0.0.0', port=port)
 
 def keep_alive():
+    """Flask serverni alohida oqimda (thread) ishga tushirish"""
     t = threading.Thread(target=run)
+    t.daemon = True
     t.start()
 
 # ==========================================
@@ -78,18 +81,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # ==========================================
-# 4. DASTURNI ISHGA TUSHIRISH
+# 4. ASINXRON ISHGA TUSHIRISH (Event Loop Muammosini Yechish)
 # ==========================================
-def main():
+async def start_bot():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    keep_alive()
+    # Botni asinxron tarzda ishga tushiramiz va polling qilamiz
+    await app.initialize()
+    await app.updater.start_polling()
+    await app.start()
     print("Bot muvaffaqiyatli ishga tushdi...")
-    app.run_polling()
+    
+    # Bot to'xtab qolmasligi uchun cheksiz sikl
+    while True:
+        await asyncio.sleep(1)
+
+def main():
+    # 1. Orqa fonda Flask veb-serverni yoqamiz
+    keep_alive()
+    
+    # 2. Asinxron xotira zanjirini (Event Loop) xatosiz ishga tushiramiz
+    asyncio.run(start_bot())
 
 if __name__ == '__main__':
     main()
