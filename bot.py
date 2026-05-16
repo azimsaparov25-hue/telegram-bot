@@ -66,7 +66,10 @@ def main():
     app.add_handler(CommandHandler("reset", reset))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     print("Bot ishga tushdi...")
-    app.run_polling()
+    import os
+port = int(os.environ.get("PORT", 10000))
+app.run_polling(listen="0.0.0.0", port=port)
+
 
 if __name__ == "__main__":
     main()
