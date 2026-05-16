@@ -1,75 +1,70 @@
 import os
+import threading
+from flask import Flask
 import google.generativeai as genai
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 
-# Config
+# ==========================================
+# 1. FLASK VEB-SERVER (Render uchun)
+# ==========================================
+server = Flask('')
+
+@server.route('/')
+def home():
+    return "Bot tirik va ishlamoqda!"
+
+def run():
+    # Render avtomatik taqdim etadigan portni tinglaymiz
+    port = int(os.environ.get("PORT", 10000))
+    server.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    """Veb-serverni alohida oqimda (thread) ishga tushirish"""
+    t = threading.Thread(target=run)
+    t.start()
+
+# ==========================================
+# 2. SOZLAMALAR VA KALITLAR (Environment)
+# ==========================================
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Gemini sozlash
+# Gemini AI konfiguratsiyasi (Ikki tilda javob berish sozlamasi bilan)
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel(
     model_name="gemini-1.5-flash",
-    system_instruction="""Sen o'zbek tilida yordam beradigan aqlli yordamchisan.
-Foydalanuvchilarga har qanday savolga qisqa, aniq va foydali javob ber.
-Gepatit B kasalligi bo'lgan odamlarga ham sog'liq bo'yicha maslahat bera olasan.
-Doim o'zbek tilida javob ber. Agar rus tilida so'rashsa, o'zbek tilida javob ber."""
+    system_instruction=(
+        "Sen foydalanuvchilar bilan qaysi tilda gaplashsa, o'sha tilda javob beradigan aqlli AI botsan. "
+        "Agar senga o'zbekcha yozishsa — doimo o'zbekcha javob ber, agar ruscha yozishsa — doimo ruscha javob ber. "
+        "Savollarga juda uzun bo'lmagan, qisqa va aniq javob qaytar."
+    )
 )
 
-# Har foydalanuvchi uchun suhbat tarixi
+# Har bir foydalanuvchi uchun alohida suhbat tarixi xotirasi
 chat_sessions = {}
 
+# ==========================================
+# 3. BOT FUNKSIYALARI (Handlers)
+# ==========================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Salom! 👋 Men sun'iy intellekt yordamchisiman.\n"
-        "Har qanday savolingizga javob beraman!\n\n"
-        "Shunchaki yozing... 💬"
-    )
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/start buyrug'i berilganda"""
     user_id = update.effective_user.id
-    user_text = update.message.text
-
-    # Typing ko'rsatish
-    await context.bot.send_chat_action(
-        chat_id=update.effective_chat.id,
-        action="typing"
+    # Yangi suhbat kontekstini ochish (tarixni tozalash)
+    chat_sessions[user_id] = model.start_chat(history=[])
+    await update.message.reply_text(
+        "Salom! Men Gemini AI botman. Savolingizni yo'llashingiz mumkin!\n"
+        "Привет! Я бот Gemini AI. Вы можете задать свой вопрос!"
     )
-
-    try:
-        # Har foydalanuvchi uchun alohida chat sessiyasi
-        if user_id not in chat_sessions:
-            chat_sessions[user_id] = model.start_chat(history=[])
-
-        chat = chat_sessions[user_id]
-        response = chat.send_message(user_text)
-        reply = response.text
-
-        await update.message.reply_text(reply)
-
-    except Exception as e:
-        await update.message.reply_text(
-            "Kechirasiz, xatolik yuz berdi. Qayta urinib ko'ring! 🙏"
-        )
-        print(f"Xato: {e}")
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/reset buyrug'i berilganda tarixni o'chirish"""
     user_id = update.effective_user.id
     if user_id in chat_sessions:
         del chat_sessions[user_id]
-    await update.message.reply_text("Suhbat tozalandi! Yangi suhbat boshlashingiz mumkin. 🔄")
+    await update.message.reply_text(
+        "Suhbat tarixi tozalandi! Yangi mavzuda gaplashishimiz mumkin.\n"
+        "История чата очищена! Мы можем начать новую тему."
+    )
 
-def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("reset", reset))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("Bot ishga tushdi...")
-    import os
-port = int(os.environ.get("PORT", 10000))
-app.run_polling(listen="0.0.0.0", port=port)
-
-
-if __name__ == "__main__":
-    main()
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE
