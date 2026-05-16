@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 
 # ==========================================
-# 1. FLASK VEB-SERVER (Render uchun)
+# 1. FLASK VEB-SERVER (Render o'chirmasligi uchun)
 # ==========================================
 server = Flask('')
 
@@ -15,12 +15,10 @@ def home():
     return "Bot tirik va ishlamoqda!"
 
 def run():
-    # Render avtomatik taqdim etadigan portni tinglaymiz
     port = int(os.environ.get("PORT", 10000))
     server.run(host='0.0.0.0', port=port)
 
 def keep_alive():
-    """Veb-serverni alohida oqimda (thread) ishga tushirish"""
     t = threading.Thread(target=run)
     t.start()
 
@@ -30,7 +28,6 @@ def keep_alive():
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Gemini AI konfiguratsiyasi (Ikki tilda javob berish sozlamasi bilan)
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel(
     model_name="gemini-1.5-flash",
@@ -41,16 +38,13 @@ model = genai.GenerativeModel(
     )
 )
 
-# Har bir foydalanuvchi uchun alohida suhbat tarixi xotirasi
 chat_sessions = {}
 
 # ==========================================
 # 3. BOT FUNKSIYALARI (Handlers)
 # ==========================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/start buyrug'i berilganda"""
     user_id = update.effective_user.id
-    # Yangi suhbat kontekstini ochish (tarixni tozalash)
     chat_sessions[user_id] = model.start_chat(history=[])
     await update.message.reply_text(
         "Salom! Men Gemini AI botman. Savolingizni yo'llashingiz mumkin!\n"
@@ -58,7 +52,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/reset buyrug'i berilganda tarixni o'chirish"""
     user_id = update.effective_user.id
     if user_id in chat_sessions:
         del chat_sessions[user_id]
@@ -67,4 +60,36 @@ async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "История чата очищена! Мы можем начать новую тему."
     )
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user_text = update.message.text
+
+    if user_id not in chat_sessions:
+        chat_sessions[user_id] = model.start_chat(history=[])
+
+    try:
+        response = chat_sessions[user_id].send_message(user_text)
+        await update.message.reply_text(response.text)
+    except Exception as e:
+        print(f"Xatolik yuz berdi: {e}")
+        await update.message.reply_text(
+            "Kechirasiz, xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring.\n"
+            "Извините, произошла ошибка. Пожалуйста, попробуйте позже."
+        )
+
+# ==========================================
+# 4. DASTURNI ISHGA TUSHIRISH
+# ==========================================
+def main():
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("reset", reset))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    keep_alive()
+    print("Bot muvaffaqiyatli ishga tushdi...")
+    app.run_polling()
+
+if __name__ == '__main__':
+    main()
